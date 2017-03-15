@@ -3,10 +3,11 @@ package quorum
 import (
 	"crypto/ecdsa"
 	"fmt"
-	"gopkg.in/fatih/set.v0"
 	"math/big"
 	"sync"
 	"time"
+
+	"gopkg.in/fatih/set.v0"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -39,23 +40,20 @@ const (
 // these transactions the parent block is selected where the next
 // block will be build on top of.
 type BlockVoting struct {
-	bc               *core.BlockChain
-	cc               *core.ChainConfig
-	txpool           *core.TxPool
-	syncChain        bool
-	synced           bool
-	singleBlockMaker bool
-	mux              *event.TypeMux
-	db               ethdb.Database
-	am               *accounts.Manager
-	gasPrice         *big.Int
+	bc           *core.BlockChain
+	cc           *core.ChainConfig
+	txpool       *core.TxPool
+	syncingChain bool
+	mux          *event.TypeMux
+	db           ethdb.Database
+	am           *accounts.Manager
+	gasPrice     *big.Int
 
 	voteSession  *VotingContractSession
 	callContract *VotingContractCaller
 
-	bmk      *ecdsa.PrivateKey
-	vk       *ecdsa.PrivateKey
-	coinbase common.Address
+	bmk *ecdsa.PrivateKey
+	vk  *ecdsa.PrivateKey
 
 	pStateMu sync.Mutex
 	pState   *pendingState
@@ -82,17 +80,15 @@ type CreateBlock struct {
 // NewBlockVoting creates a new BlockVoting instance.
 // blockMakerKey and/or voteKey can be nil in case this node doesn't create blocks or vote.
 // Note, don't forget to call Start.
-func NewBlockVoting(bc *core.BlockChain, chainConfig *core.ChainConfig, txpool *core.TxPool, mux *event.TypeMux, db ethdb.Database, accountMgr *accounts.Manager, singleBlockMaker bool) *BlockVoting {
+func NewBlockVoting(bc *core.BlockChain, chainConfig *core.ChainConfig, txpool *core.TxPool, mux *event.TypeMux, db ethdb.Database, accountMgr *accounts.Manager) *BlockVoting {
 	bv := &BlockVoting{
-		bc:               bc,
-		cc:               chainConfig,
-		txpool:           txpool,
-		mux:              mux,
-		db:               db,
-		am:               accountMgr,
-		syncChain:        false,
-		synced:           singleBlockMaker,
-		singleBlockMaker: singleBlockMaker,
+		bc:           bc,
+		cc:           chainConfig,
+		txpool:       txpool,
+		mux:          mux,
+		db:           db,
+		am:           accountMgr,
+		syncingChain: false,
 	}
 
 	return bv
@@ -224,32 +220,23 @@ func (bv *BlockVoting) run(strat BlockMakerStrategy) {
 
 				switch e := event.Data.(type) {
 				case downloader.StartEvent: // begin synchronising, stop block creation and/or voting
-					bv.syncChain = true
-					bv.synced = false
 					strat.Pause()
+					bv.syncingChain = true
 				case downloader.DoneEvent, downloader.FailedEvent: // caught up, or got an error, start block createion and/or voting
-					bv.syncChain = false
-					bv.synced = true
 					strat.Resume()
+					bv.syncingChain = false
 				case core.ChainHeadEvent: // got a new header, reset pending state
-					if !bv.syncChain {
-						bv.synced = true
-					}
-					if bv.synced {
-						bv.resetPendingState(e.Block)
-						number := new(big.Int)
-						number.Add(e.Block.Number(), common.Big1)
-						if tx, err := bv.vote(number, e.Block.Hash()); err == nil {
-							if glog.V(logger.Debug) {
-								glog.Infof("Voted for %s on height %d in tx %s", e.Block.Hash().Hex(), number, tx.Hex())
-							}
-						} else if glog.V(logger.Debug) {
-							glog.Errorf("Unable to vote: %v", err)
-						}
-					}
+					bv.resetPendingState(e.Block)
 				case core.TxPreEvent: // tx entered pool, apply to pending state
 					bv.applyTransaction(e.Tx)
 				case Vote:
+					if bv.syncingChain {
+						if e.Err != nil {
+							e.Err <- fmt.Errorf("Node synchronizing with network")
+						}
+						continue
+					}
+
 					if !bv.canVote() {
 						if e.Err != nil {
 							e.Err <- fmt.Errorf("Node not configured/allowed to vote")
@@ -257,11 +244,12 @@ func (bv *BlockVoting) run(strat BlockMakerStrategy) {
 						continue
 					}
 
-					if !bv.synced {
-						if e.Err != nil {
-							e.Err <- fmt.Errorf("Node not synced")
+					if ch, _ := bv.canonHash(e.Number.Uint64()); ch != (common.Hash{}) {
+						// enough votes, if this is an automatic generated vote request
+						// to prevent the network to stall just ignore it.
+						if e.Err == nil {
+							continue
 						}
-						continue
 					}
 
 					txHash, err := bv.vote(e.Number, e.Hash)
@@ -276,16 +264,16 @@ func (bv *BlockVoting) run(strat BlockMakerStrategy) {
 					}
 
 				case CreateBlock:
-					if !bv.canCreateBlocks() {
+					if bv.syncingChain {
 						if e.Err != nil {
-							e.Err <- fmt.Errorf("Node not configured/allowed to create blocks")
+							e.Err <- fmt.Errorf("Node synchronizing with network")
 						}
 						continue
 					}
 
-					if !bv.synced {
+					if !bv.canCreateBlocks() {
 						if e.Err != nil {
-							e.Err <- fmt.Errorf("Not not synced")
+							e.Err <- fmt.Errorf("Node not configured/allowed to create blocks")
 						}
 						continue
 					}
@@ -298,21 +286,6 @@ func (bv *BlockVoting) run(strat BlockMakerStrategy) {
 					} else if err != nil {
 						if glog.V(logger.Debug) {
 							glog.Errorf("Unable to create block: %v", err)
-						}
-					}
-
-					// force vote in case this node is configured as the single block maker
-					// on the network. This is necessary to generate votes to bootstrap/or
-					// after a reset of the network.
-					if err != nil && bv.singleBlockMaker {
-						bv.pStateMu.Lock()
-						cBlock := bv.pState.parent
-						bv.pStateMu.Unlock()
-						num := new(big.Int).Add(cBlock.Number(), common.Big1)
-						_, err := bv.vote(num, cBlock.Hash())
-						if err != nil {
-							glog.Errorf("Unable to vote: %v", err)
-							bv.resetPendingState(bv.bc.CurrentBlock())
 						}
 					}
 				}

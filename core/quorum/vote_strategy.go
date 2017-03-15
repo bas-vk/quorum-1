@@ -40,6 +40,7 @@ type randomDeadlineStrategy struct {
 	min, max      int // min and max deadline
 	activeMu      sync.Mutex
 	active        bool
+	voteTimer     *time.Timer
 	deadlineTimer *time.Timer
 }
 
@@ -79,11 +80,19 @@ func (s *randomDeadlineStrategy) Start() error {
 	if glog.V(logger.Debug) {
 		glog.Infof("Random deadline strategy configured with min=%d, max=%d", s.min, s.max)
 	}
+	s.voteTimer = time.NewTimer(time.Duration(s.min+rand.Intn(s.max-s.min)) * time.Second)
 	s.deadlineTimer = time.NewTimer(time.Duration(s.min+rand.Intn(s.max-s.min)) * time.Second)
 	go func() {
 		sub := s.mux.Subscribe(core.ChainHeadEvent{})
 		for {
 			select {
+			case <-s.voteTimer.C:
+				s.activeMu.Lock()
+				if s.active {
+					s.mux.Post(CreateBlock{})
+				}
+				s.activeMu.Unlock()
+				resetTimer(s.voteTimer, s.min, s.max)
 			case <-s.deadlineTimer.C:
 				s.activeMu.Lock()
 				if s.active {

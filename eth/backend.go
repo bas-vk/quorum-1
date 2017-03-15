@@ -64,10 +64,10 @@ var (
 type Config struct {
 	ChainConfig *core.ChainConfig // chain configuration
 
-	NetworkId        int    // Network ID to use for selecting peers to connect to
-	Genesis          string // Genesis JSON to seed the chain database with
-	SingleBlockMaker bool   // Assume this node is the only node on the network allowed to create blocks
-	EnableNodePermission bool //Used for enabling / disabling node permissioning
+	NetworkId            int    // Network ID to use for selecting peers to connect to
+	Genesis              string // Genesis JSON to seed the chain database with
+	SingleBlockMaker     bool   // Assume this node is the only node on the network allowed to create blocks
+	EnableNodePermission bool   //Used for enabling / disabling node permissioning
 
 	SkipBcVersionCheck bool // e.g. blockchain export
 	DatabaseCache      int
@@ -220,7 +220,7 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 
 	eth.apiBackend = &EthApiBackend{eth}
 
-	eth.blockVoting = quorum.NewBlockVoting(eth.blockchain, eth.chainConfig, eth.txPool, eth.eventMux, eth.chainDb, eth.accountManager, config.SingleBlockMaker)
+	eth.blockVoting = quorum.NewBlockVoting(eth.blockchain, eth.chainConfig, eth.txPool, eth.eventMux, eth.chainDb, eth.accountManager)
 
 	return eth, nil
 }
