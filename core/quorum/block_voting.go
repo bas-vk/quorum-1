@@ -355,8 +355,13 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 		return nil, err
 	}
 	if ch != bv.pState.parent.Hash() {
+		// majority voted for a different head than our pending block was based on
+		// reset pending state to the winning block
 		if pBlock := bv.bc.GetBlockByHash(ch); pBlock != nil {
+			glog.Errorf("BVK reset pending state with pBlock: 0x%x/0x%x", pBlock.Hash(), ch)
 			bv.resetPendingState(pBlock)
+		} else {
+			glog.Errorf("BVK reset pending state with pBlock: 0x%x failed (not found)", ch)
 		}
 		return nil, fmt.Errorf("Winning parent block [0x%x] differs than pending block parent [0x%x]", ch, bv.pState.header.Hash())
 	}
