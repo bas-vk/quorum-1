@@ -89,7 +89,7 @@ func (s *randomDeadlineStrategy) Start() error {
 			case <-s.voteTimer.C:
 				s.activeMu.Lock()
 				if s.active {
-					s.mux.Post(CreateBlock{})
+					s.mux.Post(Vote{})
 				}
 				s.activeMu.Unlock()
 				resetTimer(s.voteTimer, s.min, s.max)
