@@ -352,6 +352,7 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 
 	ch, err := bv.canonHash(bv.pState.header.Number.Uint64())
 	if err != nil {
+		glog.Errorf("Could not obtain ch: %v", err)
 		return nil, err
 	}
 	if ch != bv.pState.parent.Hash() {
@@ -365,6 +366,8 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 		}
 		return nil, fmt.Errorf("Winning parent block [0x%x] differs than pending block parent [0x%x]", ch, bv.pState.header.Hash())
 	}
+
+	glog.Errorf("BVK create block from canonical hash: 0x%x", ch)
 
 	bv.pStateMu.Lock()
 	defer bv.pStateMu.Unlock()
