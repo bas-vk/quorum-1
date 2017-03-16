@@ -261,14 +261,6 @@ func (bv *BlockVoting) run(strat BlockMakerStrategy) {
 						e.Number = new(big.Int).Add(pBlock.Number(), common.Big1)
 					}
 
-					// if our local head already has enough votes and this isn't a manual voting
-					// request don't vote.
-					//if ch, _ := bv.canonHash(e.Number.Uint64()); ch == e.Hash {
-					//	if e.Err == nil {
-					//		continue
-					//	}
-					//}
-
 					txHash, err := bv.vote(e.Number, e.Hash)
 					if err == nil && e.TxHash != nil {
 						e.TxHash <- txHash
@@ -363,7 +355,10 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 		return nil, err
 	}
 	if ch != bv.pState.parent.Hash() {
-		return nil, fmt.Errorf("invalid canonical hash, expected %s got %s", ch.Hex(), bv.pState.header.Hash().Hex())
+		if pBlock := bv.bc.GetBlockByHash(ch); pBlock != nil {
+			bv.resetPendingState(pBlock)
+		}
+		return nil, fmt.Errorf("Winning parent block [0x%x] differs than pending block parent [0x%x]", ch, bv.pState.header.Hash())
 	}
 
 	bv.pStateMu.Lock()
@@ -417,9 +412,9 @@ func (bv *BlockVoting) vote(height *big.Int, hash common.Hash) (common.Hash, err
 		return common.Hash{}, fmt.Errorf("%s is not allowed to vote", bv.voteSession.TransactOpts.From.Hex())
 	}
 
-	//if glog.V(logger.Detail) {
-	glog.Errorf("vote for %s on height %d", hash.Hex(), height)
-	//}
+	if glog.V(logger.Detail) {
+		glog.Infof("vote for %s on height %d", hash.Hex(), height)
+	}
 
 	nonce := bv.txpool.Nonce(bv.voteSession.TransactOpts.From)
 	bv.voteSession.TransactOpts.Nonce = new(big.Int).SetUint64(nonce)
@@ -429,8 +424,6 @@ func (bv *BlockVoting) vote(height *big.Int, hash common.Hash) (common.Hash, err
 	if err != nil {
 		return common.Hash{}, err
 	}
-
-	glog.Errorf("BvK DBG: txhash: %x, nonce: %d", tx.Hash(), tx.Nonce())
 
 	return tx.Hash(), nil
 }
