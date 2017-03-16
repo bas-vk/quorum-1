@@ -352,22 +352,21 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 
 	ch, err := bv.canonHash(bv.pState.header.Number.Uint64())
 	if err != nil {
-		glog.Errorf("Could not obtain ch: %v", err)
 		return nil, err
 	}
+
+	if ch == (common.Hash{}) {
+		return nil, fmt.Errorf("No block with enough votes")
+	}
+
 	if ch != bv.pState.parent.Hash() {
 		// majority voted for a different head than our pending block was based on
 		// reset pending state to the winning block
 		if pBlock := bv.bc.GetBlockByHash(ch); pBlock != nil {
-			glog.Errorf("BVK reset pending state with pBlock: 0x%x/0x%x", pBlock.Hash(), ch)
 			bv.resetPendingState(pBlock)
-		} else {
-			glog.Errorf("BVK reset pending state with pBlock: 0x%x failed (not found)", ch)
 		}
 		return nil, fmt.Errorf("Winning parent block [0x%x] differs than pending block parent [0x%x]", ch, bv.pState.header.Hash())
 	}
-
-	glog.Errorf("BVK create block from canonical hash: 0x%x", ch)
 
 	bv.pStateMu.Lock()
 	defer bv.pStateMu.Unlock()
