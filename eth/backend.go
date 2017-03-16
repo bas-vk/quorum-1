@@ -90,8 +90,10 @@ type Config struct {
 	TestGenesisBlock *types.Block   // Genesis block to seed the chain database with (testing only!)
 	TestGenesisState ethdb.Database // Genesis state to seed the database with (testing only!)
 
-	VoteMinBlockTime uint
-	VoteMaxBlockTime uint
+	MinBlockTime uint
+	MaxBlockTime uint
+	MinVoteTime  uint
+	MaxVoteTime  uint
 }
 
 // Ethereum implements the Ethereum full node service.
@@ -125,10 +127,12 @@ type Ethereum struct {
 	netVersionId  int
 	netRPCService *ethapi.PublicNetAPI
 
-	blockVoting      *quorum.BlockVoting
-	voteMinBlockTime uint
-	voteMaxBlockTime uint
-	blockMakerStrat  quorum.BlockMakerStrategy
+	blockVoting     *quorum.BlockVoting
+	minBlockTime    uint
+	maxBlockTime    uint
+	minVoteTime     uint
+	maxVoteTime     uint
+	blockMakerStrat quorum.BlockMakerStrategy
 }
 
 // New creates a new Ethereum object (including the
@@ -148,21 +152,23 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 	}
 
 	eth := &Ethereum{
-		chainDb:          chainDb,
-		eventMux:         ctx.EventMux,
-		accountManager:   ctx.AccountManager,
-		pow:              pow,
-		shutdownChan:     make(chan bool),
-		stopDbUpgrade:    stopDbUpgrade,
-		httpclient:       httpclient.New(config.DocRoot),
-		netVersionId:     config.NetworkId,
-		NatSpec:          config.NatSpec,
-		PowTest:          config.PowTest,
-		etherbase:        config.Etherbase,
-		AutoDAG:          config.AutoDAG,
-		solcPath:         config.SolcPath,
-		voteMinBlockTime: config.VoteMinBlockTime,
-		voteMaxBlockTime: config.VoteMaxBlockTime,
+		chainDb:        chainDb,
+		eventMux:       ctx.EventMux,
+		accountManager: ctx.AccountManager,
+		pow:            pow,
+		shutdownChan:   make(chan bool),
+		stopDbUpgrade:  stopDbUpgrade,
+		httpclient:     httpclient.New(config.DocRoot),
+		netVersionId:   config.NetworkId,
+		NatSpec:        config.NatSpec,
+		PowTest:        config.PowTest,
+		etherbase:      config.Etherbase,
+		AutoDAG:        config.AutoDAG,
+		solcPath:       config.SolcPath,
+		minBlockTime:   config.MinBlockTime,
+		maxBlockTime:   config.MaxBlockTime,
+		minVoteTime:    config.MinVoteTime,
+		maxVoteTime:    config.MaxVoteTime,
 	}
 
 	if err := upgradeChainDatabase(chainDb); err != nil {

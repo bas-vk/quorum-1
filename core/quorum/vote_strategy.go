@@ -36,32 +36,47 @@ type BlockMakerStrategy interface {
 // after a deadline is passed without importing a new head. This
 // deadline is chosen random between 2 limits.
 type randomDeadlineStrategy struct {
-	mux           *event.TypeMux
-	min, max      int // min and max deadline
-	activeMu      sync.Mutex
-	active        bool
-	voteTimer     *time.Timer
-	deadlineTimer *time.Timer
+	mux                        *event.TypeMux
+	minBlockTime, maxBlockTime int // min and max block creation deadline
+	minVoteTime, maxVoteTime   int // min and max block voting deadline
+	activeMu                   sync.Mutex
+	active                     bool
+	voteTimer                  *time.Timer
+	deadlineTimer              *time.Timer
 }
 
 // NewRandomDeadelineStrategy returns a block maker strategy that
 // generated blocks randomly between the given min and max seconds.
-func NewRandomDeadelineStrategy(mux *event.TypeMux, min, max uint) *randomDeadlineStrategy {
-	if min > max {
-		min, max = max, min
+func NewRandomDeadelineStrategy(mux *event.TypeMux, minBlockTime, maxBlockTime, minVoteTime, maxVoteTime uint) *randomDeadlineStrategy {
+	if minBlockTime > maxBlockTime {
+		minBlockTime, maxBlockTime = maxBlockTime, minBlockTime
 	}
-	if min == 0 {
+	if minBlockTime == 0 {
 		glog.Info("Set minimum block deadeline interval to 1 second")
-		min += 1
+		minBlockTime += 1
 	}
-	if min == max {
-		max += 1
+	if minBlockTime == maxBlockTime {
+		maxBlockTime += 1
 	}
+
+	if minVoteTime > maxVoteTime {
+		minVoteTime, maxVoteTime = maxVoteTime, minVoteTime
+	}
+	if minVoteTime == 0 {
+		glog.Info("Set minimum block deadeline interval to 1 second")
+		minVoteTime += 1
+	}
+	if minVoteTime == maxVoteTime {
+		maxVoteTime += 1
+	}
+
 	s := &randomDeadlineStrategy{
-		mux:    mux,
-		min:    int(min),
-		max:    int(max),
-		active: true,
+		mux:          mux,
+		minBlockTime: int(minBlockTime),
+		maxBlockTime: int(maxBlockTime),
+		minVoteTime:  int(minVoteTime),
+		maxVoteTime:  int(maxVoteTime),
+		active:       true,
 	}
 	return s
 }
@@ -78,10 +93,13 @@ func resetTimer(t *time.Timer, min, max int) {
 // Start generating block create request events.
 func (s *randomDeadlineStrategy) Start() error {
 	if glog.V(logger.Debug) {
-		glog.Infof("Random deadline strategy configured with min=%d, max=%d", s.min, s.max)
+		glog.Infof("Random deadline strategy configured with minBlockTime=%d, maxBlockTime=%d, minVoteTime=%d, maxVoteTime=%d",
+			s.minBlockTime, s.maxBlockTime, s.minVoteTime, s.maxVoteTime)
 	}
-	s.voteTimer = time.NewTimer(time.Duration(s.min+rand.Intn(s.max-s.min)) * time.Second)
-	s.deadlineTimer = time.NewTimer(time.Duration(s.min+rand.Intn(s.max-s.min)) * time.Second)
+
+	s.voteTimer = time.NewTimer(time.Duration(s.minBlockTime+rand.Intn(s.maxVoteTime-s.minVoteTime)) * time.Second)
+	s.deadlineTimer = time.NewTimer(time.Duration(s.minBlockTime+rand.Intn(s.maxBlockTime-s.minBlockTime)) * time.Second)
+
 	go func() {
 		sub := s.mux.Subscribe(core.ChainHeadEvent{})
 		for {
@@ -92,16 +110,16 @@ func (s *randomDeadlineStrategy) Start() error {
 					s.mux.Post(Vote{})
 				}
 				s.activeMu.Unlock()
-				resetTimer(s.voteTimer, s.min, s.max)
+				resetTimer(s.voteTimer, s.minVoteTime, s.maxVoteTime)
 			case <-s.deadlineTimer.C:
 				s.activeMu.Lock()
 				if s.active {
 					s.mux.Post(CreateBlock{})
 				}
 				s.activeMu.Unlock()
-				resetTimer(s.deadlineTimer, s.min, s.max)
+				resetTimer(s.deadlineTimer, s.minBlockTime, s.maxBlockTime)
 			case <-sub.Chan():
-				resetTimer(s.deadlineTimer, s.min, s.max)
+				resetTimer(s.deadlineTimer, s.minBlockTime, s.maxBlockTime)
 			}
 		}
 	}()
@@ -149,8 +167,10 @@ func (s *randomDeadlineStrategy) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(map[string]interface{}{
 		"type":         "deadline",
-		"minblocktime": s.min,
-		"maxblocktime": s.max,
+		"minblocktime": s.minBlockTime,
+		"maxblocktime": s.maxBlockTime,
+		"minvotetime":  s.minVoteTime,
+		"maxvotetime":  s.maxVoteTime,
 		"status":       status,
 	})
 }
