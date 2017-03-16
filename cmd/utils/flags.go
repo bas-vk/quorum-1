@@ -658,7 +658,7 @@ func RegisterEthService(ctx *cli.Context, stack *node.Node, extra []byte) {
 	ethConf := &eth.Config{
 		Etherbase:        MakeEtherbase(stack.AccountManager(), ctx),
 		ChainConfig:      MakeChainConfig(ctx, stack),
-		SingleBlockMaker: ctx.GlobalBool(SingleBlockMakerFlag.Name),
+		AssumeSynced:     ctx.GlobalIsSet(VoteBlockMakerAccountFlag.Name), // assume block maker nodes are always synced until proven otherwise ctx.GlobalBool(SingleBlockMakerFlag.Name),
 		DatabaseCache:    ctx.GlobalInt(CacheFlag.Name),
 		DatabaseHandles:  MakeDatabaseHandles(),
 		NetworkId:        ctx.GlobalInt(NetworkIdFlag.Name),
