@@ -113,6 +113,7 @@ func (bv *BlockVoting) resetPendingState(parent *types.Block) {
 		header:        bv.makeHeader(parent),
 		gp:            new(core.GasPool),
 		ownedAccounts: accountAddressesSet(bv.am.Accounts()),
+		voters:        set.New(),
 	}
 
 	ps.gp.AddGas(ps.header.GasLimit)
@@ -261,7 +262,7 @@ func (bv *BlockVoting) run(strat BlockMakerStrategy) {
 						e.Number = new(big.Int).Add(pBlock.Number(), common.Big1)
 					}
 
-					txHash, err := bv.vote(e.Number, e.Hash)
+					txHash, err := bv.vote(e.Number, e.Hash, e.Err != nil)
 					if err == nil && e.TxHash != nil {
 						e.TxHash <- txHash
 					} else if err != nil && e.Err != nil {
@@ -407,7 +408,7 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 	return block, nil
 }
 
-func (bv *BlockVoting) vote(height *big.Int, hash common.Hash) (common.Hash, error) {
+func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (common.Hash, error) {
 	if bv.voteSession == nil {
 		return common.Hash{}, fmt.Errorf("Node is not configured for voting")
 	}
@@ -419,8 +420,16 @@ func (bv *BlockVoting) vote(height *big.Int, hash common.Hash) (common.Hash, err
 		return common.Hash{}, fmt.Errorf("%s is not allowed to vote", bv.voteSession.TransactOpts.From.Hex())
 	}
 
-	if glog.V(logger.Detail) {
-		glog.Infof("vote for %s on height %d", hash.Hex(), height)
+	if !force {
+		if ch, err := bv.canonHash(height.Uint64()); err == nil && ch != (common.Hash{}) {
+			// already enough votes, test if this node already has voted, if so don't vote again
+			bv.pStateMu.Lock()
+			alreadyVotes := bv.pState.voters.Has(bv.voteSession.TransactOpts.From)
+			bv.pStateMu.Unlock()
+			if alreadyVotes {
+				return common.Hash{}, fmt.Errorf("Not has already voted on this height")
+			}
+		}
 	}
 
 	nonce := bv.txpool.Nonce(bv.voteSession.TransactOpts.From)
