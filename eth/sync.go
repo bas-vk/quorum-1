@@ -177,6 +177,9 @@ func (pm *ProtocolManager) synchronise(peer *peer) {
 	if atomic.LoadUint32(&pm.fastSync) == 1 {
 		mode = downloader.FastSync
 	}
+
+	glog.Errorf("bvk, start sync")
+	atomic.StoreUint32(&pm.synced, 0) // Mark initial sync start
 	if err := pm.downloader.Synchronise(peer.id, pHead, pTd, mode); err != nil {
 		return
 	}
