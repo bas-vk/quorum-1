@@ -409,8 +409,6 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 }
 
 func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (common.Hash, error) {
-	glog.Errorf("BVK height: %d, pState.number: %d", height.Uint64(), bv.pState.header.Number.Uint64())
-
 	if bv.voteSession == nil {
 		return common.Hash{}, fmt.Errorf("Node is not configured for voting")
 	}
@@ -444,7 +442,7 @@ func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (comm
 	}
 
 	bv.pStateMu.Lock()
-	if height.Uint64()+1 == bv.pState.header.Number.Uint64() {
+	if height.Uint64() == bv.pState.header.Number.Uint64() {
 		bv.pState.alreadyVoted = true
 	}
 	bv.pStateMu.Unlock()
