@@ -26,7 +26,7 @@ type pendingState struct {
 	gp                        *core.GasPool
 	ownedAccounts             *set.Set
 	txs                       types.Transactions // set of transactions
-	voters                    *set.Set           // list of accounts that have voted
+	alreadyVoted              bool               // keep track if already votes in this pending block
 	lowGasTxs                 types.Transactions
 	failedTxs                 types.Transactions
 	parent                    *types.Block

@@ -113,7 +113,7 @@ func (bv *BlockVoting) resetPendingState(parent *types.Block) {
 		header:        bv.makeHeader(parent),
 		gp:            new(core.GasPool),
 		ownedAccounts: accountAddressesSet(bv.am.Accounts()),
-		voters:        set.New(),
+		alreadyVoted:  false,
 	}
 
 	ps.gp.AddGas(ps.header.GasLimit)
@@ -409,6 +409,8 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 }
 
 func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (common.Hash, error) {
+	glog.Errorf("BVK height: %d, pState.number: %d", height.Uint64(), bv.pState.header.Number.Uint64())
+
 	if bv.voteSession == nil {
 		return common.Hash{}, fmt.Errorf("Node is not configured for voting")
 	}
@@ -424,7 +426,7 @@ func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (comm
 		if ch, err := bv.canonHash(height.Uint64()); err == nil && ch != (common.Hash{}) {
 			// already enough votes, test if this node already has voted, if so don't vote again
 			bv.pStateMu.Lock()
-			alreadyVoted := bv.pState.voters.Has(bv.voteSession.TransactOpts.From)
+			alreadyVoted := bv.pState.alreadyVoted
 			bv.pStateMu.Unlock()
 			if alreadyVoted {
 				return common.Hash{}, fmt.Errorf("Node already voted on this height")
@@ -442,8 +444,8 @@ func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (comm
 	}
 
 	bv.pStateMu.Lock()
-	if height.Cmp(bv.pState.header.Number) == 0 {
-		bv.pState.voters.Add(bv.voteSession.TransactOpts.From)
+	if height.Uint64()+1 == bv.pState.header.Number.Uint64() {
+		bv.pState.alreadyVoted = true
 	}
 	bv.pStateMu.Unlock()
 
