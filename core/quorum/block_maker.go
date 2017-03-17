@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
-	"github.com/ethereum/go-ethereum/params"
 	"gopkg.in/fatih/set.v0"
 )
 
@@ -58,13 +57,6 @@ func (ps *pendingState) applyTransaction(tx *types.Transaction, bc *core.BlockCh
 	}
 	ps.txs = append(ps.txs, tx)
 	ps.receipts = append(ps.receipts, receipt)
-
-	// keep track of nodes that added votes
-	if tx.To() != nil && *tx.To() == params.QuorumVotingContractAddr {
-		if from, err := tx.From(); err != nil {
-			ps.voters.Add(from)
-		}
-	}
 
 	return nil, logs
 }

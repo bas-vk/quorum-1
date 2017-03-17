@@ -424,10 +424,10 @@ func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (comm
 		if ch, err := bv.canonHash(height.Uint64()); err == nil && ch != (common.Hash{}) {
 			// already enough votes, test if this node already has voted, if so don't vote again
 			bv.pStateMu.Lock()
-			alreadyVotes := bv.pState.voters.Has(bv.voteSession.TransactOpts.From)
+			alreadyVoted := bv.pState.voters.Has(bv.voteSession.TransactOpts.From)
 			bv.pStateMu.Unlock()
-			if alreadyVotes {
-				return common.Hash{}, fmt.Errorf("Not has already voted on this height")
+			if alreadyVoted {
+				return common.Hash{}, fmt.Errorf("Node already voted on this height")
 			}
 		}
 	}
@@ -440,6 +440,12 @@ func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (comm
 	if err != nil {
 		return common.Hash{}, err
 	}
+
+	bv.pStateMu.Lock()
+	if height.Cmp(bv.pState.header.Number) == 0 {
+		bv.pState.voters.Add(bv.voteSession.TransactOpts.From)
+	}
+	bv.pStateMu.Unlock()
 
 	return tx.Hash(), nil
 }
