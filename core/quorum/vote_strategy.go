@@ -3,14 +3,12 @@ package quorum
 import (
 	crand "crypto/rand"
 	"encoding/json"
+	"fmt"
 	"math"
+	"math/big"
 	"math/rand"
 	"sync"
 	"time"
-
-	"math/big"
-
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/event"
@@ -69,7 +67,7 @@ type randomDeadlineStrategy struct {
 
 // NewRandomDeadelineStrategy returns a block maker strategy that
 // generated blocks randomly between the given min and max seconds.
-func NewRandomDeadelineStrategy(mux *event.TypeMux, minBlockTime, maxBlockTime, minVoteTime, maxVoteTime uint) *randomDeadlineStrategy {
+func NewRandomDeadelineStrategy(mux *event.TypeMux, minBlockTime, maxBlockTime, minVoteTime, maxVoteTime uint, activateVoting, activateBlockCreation bool) *randomDeadlineStrategy {
 	if minBlockTime > maxBlockTime {
 		minBlockTime, maxBlockTime = maxBlockTime, minBlockTime
 	}
@@ -103,8 +101,8 @@ func NewRandomDeadelineStrategy(mux *event.TypeMux, minBlockTime, maxBlockTime, 
 		maxBlockTime:      int(maxBlockTime),
 		minVoteTime:       int(minVoteTime),
 		maxVoteTime:       int(maxVoteTime),
-		blockCreateActive: true,
-		votingActive:      true,
+		blockCreateActive: activateBlockCreation,
+		votingActive:      activateVoting,
 		rand:              rand.New(rand.NewSource(seed.Int64())),
 	}
 
@@ -130,6 +128,8 @@ func (s *randomDeadlineStrategy) Start() error {
 	s.voteTimer = time.NewTimer(time.Duration(s.minBlockTime+rand.Intn(s.maxVoteTime-s.minVoteTime)) * time.Second)
 	s.deadlineTimer = time.NewTimer(time.Duration(s.minBlockTime+rand.Intn(s.maxBlockTime-s.minBlockTime)) * time.Second)
 
+	lastVotedHeight := uint64(0)
+
 	go func() {
 		sub := s.mux.Subscribe(core.ChainHeadEvent{})
 		for {
@@ -149,7 +149,23 @@ func (s *randomDeadlineStrategy) Start() error {
 				}
 				s.activeMu.Unlock()
 				resetTimer(s.deadlineTimer, time.Duration(s.minBlockTime+s.rand.Intn(s.maxBlockTime-s.minBlockTime))*time.Second)
-			case <-sub.Chan():
+			case e := <-sub.Chan():
+				if s.votingActive {
+					// don't wait for the timer and vote immediately when a new block is imported
+					che := e.Data.(core.ChainHeadEvent)
+					if che.Block.NumberU64() > lastVotedHeight {
+						lastVotedHeight = che.Block.NumberU64()
+						go func() {
+							// post in different go-routine to prevent a deadlock when a
+							// new ChainHeadEvent is posted before the Vote event.
+							s.mux.Post(Vote{
+								Hash:   che.Block.Hash(),
+								Number: new(big.Int).Add(big.NewInt(1), che.Block.Number()),
+							})
+						}()
+					}
+				}
+				resetTimer(s.voteTimer, time.Duration(s.minVoteTime+s.rand.Intn(s.maxVoteTime-s.minVoteTime))*time.Second)
 				resetTimer(s.deadlineTimer, time.Duration(s.minBlockTime+s.rand.Intn(s.maxBlockTime-s.minBlockTime))*time.Second)
 			}
 		}

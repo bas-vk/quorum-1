@@ -52,7 +52,6 @@ func (ps *pendingState) applyTransaction(tx *types.Transaction, bc *core.BlockCh
 	if err != nil {
 		ps.publicState.RevertToSnapshot(publicSnaphot)
 		ps.privateState.RevertToSnapshot(privateSnapshot)
-
 		return err, nil
 	}
 	ps.txs = append(ps.txs, tx)
