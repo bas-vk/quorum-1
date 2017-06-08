@@ -137,6 +137,9 @@ func (s *randomDeadlineStrategy) Start() error {
 			case <-s.voteTimer.C:
 				s.activeMu.Lock()
 				if s.votingActive {
+					if glog.V(logger.Debug) {
+						glog.Infoln("issue vote request event")
+					}
 					s.mux.Post(Vote{})
 				}
 				s.activeMu.Unlock()
@@ -145,6 +148,9 @@ func (s *randomDeadlineStrategy) Start() error {
 			case <-s.deadlineTimer.C:
 				s.activeMu.Lock()
 				if s.blockCreateActive {
+					if glog.V(logger.Debug) {
+						glog.Infoln("issue create block request event")
+					}
 					s.mux.Post(CreateBlock{})
 				}
 				s.activeMu.Unlock()
@@ -156,6 +162,9 @@ func (s *randomDeadlineStrategy) Start() error {
 					if che.Block.NumberU64() > lastVotedHeight {
 						lastVotedHeight = che.Block.NumberU64()
 						go func() {
+							if glog.V(logger.Debug) {
+								glog.Infoln("Generate vote event for chain head event")
+							}
 							// post in different go-routine to prevent a deadlock when a
 							// new ChainHeadEvent is posted before the Vote event.
 							s.mux.Post(Vote{

@@ -110,6 +110,10 @@ func NewBlockVoting(bc *core.BlockChain, chainConfig *core.ChainConfig, txpool *
 }
 
 func (bv *BlockVoting) resetPendingState(parent *types.Block) {
+	if glog.V(logger.Debug) {
+		glog.Infof("reset pending state with parent block #%d/%x", parent.Number(), parent.Hash())
+	}
+
 	publicState, privateState, err := bv.bc.StateAt(parent.Root())
 	if err != nil {
 		panic(fmt.Sprintf("State error: %v", err))
@@ -235,10 +239,18 @@ func (bv *BlockVoting) run(strat BlockVoteMakerStrategy) {
 
 				switch e := event.Data.(type) {
 				case downloader.StartEvent: // begin synchronising, stop block creation and/or voting
+					if glog.V(logger.Debug) {
+						glog.Infof("start synchronising")
+					}
+
 					strat.PauseBlockMaking()
 					strat.PauseVoting()
 					bv.syncingChain = true
-				case downloader.DoneEvent, downloader.FailedEvent: // caught up, or got an error, start block createion and/or voting
+				case downloader.DoneEvent, downloader.FailedEvent: // caught up, or got an error, start block creation and/or voting
+					if glog.V(logger.Debug) {
+						glog.Infof("synchronising finished")
+					}
+
 					strat.ResumeBlockMaking()
 					strat.ResumeVoting()
 					bv.syncingChain = false
@@ -357,6 +369,10 @@ func (bv *BlockVoting) Pending() (*types.Block, *state.StateDB, *state.StateDB) 
 }
 
 func (bv *BlockVoting) createBlock() (*types.Block, error) {
+	if glog.V(logger.Debug) {
+		glog.Infoln("create block")
+	}
+
 	if bv.bmk == nil {
 		return nil, fmt.Errorf("Node not configured for block creation")
 	}
@@ -421,6 +437,10 @@ func (bv *BlockVoting) createBlock() (*types.Block, error) {
 }
 
 func (bv *BlockVoting) vote(height *big.Int, hash common.Hash, force bool) (common.Hash, error) {
+	if glog.V(logger.Debug) {
+		glog.Infof("vote for block %x on height %d (force=%v)", hash, height, force)
+	}
+
 	if bv.voteSession == nil {
 		return common.Hash{}, fmt.Errorf("Node is not configured for voting")
 	}
