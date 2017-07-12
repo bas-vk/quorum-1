@@ -802,7 +802,7 @@ func (self *BlockChain) WriteBlock(block *types.Block) (status WriteStatus, err 
 	if ptd == nil {
 		return NonStatTy, ParentError(block.ParentHash())
 	}
-	
+
 	// Make sure no inconsistent state is leaked during insertion
 	self.mu.Lock()
 	defer self.mu.Unlock()
@@ -819,8 +819,15 @@ func (self *BlockChain) WriteBlock(block *types.Block) (status WriteStatus, err 
 
 	status = SideStatTy
 	if self.currentBlock.NumberU64() < block.NumberU64() {
-		self.insert(block)
+		// Reorganise the chain if the parent is not the head block
+		if block.ParentHash() != self.currentBlock.Hash() {
+			if err := self.reorg(self.currentBlock, block); err != nil {
+				return NonStatTy, err
+			}
+		}
+
 		status = CanonStatTy
+		self.insert(block)
 	}
 
 	self.futureBlocks.Remove(block.Hash())
