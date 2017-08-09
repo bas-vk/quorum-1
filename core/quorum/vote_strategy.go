@@ -140,7 +140,7 @@ func (s *randomDeadlineStrategy) Start() error {
 					if glog.V(logger.Debug) {
 						glog.Infoln("issue vote request event")
 					}
-					s.mux.Post(Vote{})
+					go s.mux.Post(Vote{})
 				}
 				s.activeMu.Unlock()
 
@@ -151,7 +151,7 @@ func (s *randomDeadlineStrategy) Start() error {
 					if glog.V(logger.Debug) {
 						glog.Infoln("issue create block request event")
 					}
-					s.mux.Post(CreateBlock{})
+					go s.mux.Post(CreateBlock{})
 				}
 				s.activeMu.Unlock()
 				resetTimer(s.deadlineTimer, time.Duration(s.minBlockTime+s.rand.Intn(s.maxBlockTime-s.minBlockTime))*time.Second)
